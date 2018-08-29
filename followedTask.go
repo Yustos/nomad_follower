@@ -49,7 +49,7 @@ func (ft *FollowedTask) Start() {
 				}
 			case stdErrMsg, stdErrOk := <-stdErrStream:
 				if stdErrOk {
-					messages := processMessage(stdErrMsg, ft)
+					messages := processMessage(stdErrMsg, ft, "Error")
 					for _, message := range messages {
 						ft.OutputChan <- message
 					}
@@ -59,7 +59,7 @@ func (ft *FollowedTask) Start() {
 
 			case stdOutMsg, stdOutOk := <-stdOutStream:
 				if stdOutOk {
-					messages := processMessage(stdOutMsg, ft)
+					messages := processMessage(stdOutMsg, ft, "Info")
 					for _, message := range messages {
 						ft.OutputChan <- message
 					}
@@ -91,20 +91,25 @@ func collectServiceTags(services []*nomadApi.Service) []string {
 	return result
 }
 
-func processMessage(frame *nomadApi.StreamFrame, ft *FollowedTask) []map[string]interface{} {
+func processMessage(frame *nomadApi.StreamFrame, ft *FollowedTask, level string) []map[string]interface{} {
 	messages := strings.Split(string(frame.Data[:]), "\n")
 	jsons := make([]map[string]interface{}, 0)
 	for _, message := range messages {
 		if message != "" && message != "\n" {
-			if isJSON(message) {
-				jsons = append(jsons, enrichJSONMessage(ft, message))
-			} else {
-				jsons = append(jsons, enrichStringMessage(ft, message))
-			}
+			js := messageJs(message)
+			encrichMessage(ft, js, level)
+			jsons = append(jsons, js)
 		}
 	}
 
 	return jsons
+}
+
+func messageJs(message string) map[string]interface{} {
+	if isJSON(message) {
+		return getJSONMessage(message)
+	}
+	return stringMessage(message)
 }
 
 func isJSON(s string) bool {
@@ -119,19 +124,18 @@ func getJSONMessage(s string) map[string]interface{} {
 	return js
 }
 
-func enrichJSONMessage(ft *FollowedTask, message string) map[string]interface{} {
-	js := getJSONMessage(message)
-
-	js["task"] = ft
-
-	return js
+func jsonMessage(message string) map[string]interface{} {
+	return getJSONMessage(message)
 }
 
-func enrichStringMessage(ft *FollowedTask, message string) map[string]interface{} {
+func stringMessage(message string) map[string]interface{} {
 	js := make(map[string]interface{})
 	js["message"] = message
 	js["gatheringTime"] = time.Now()
+	return js
+}
 
+func encrichMessage(ft *FollowedTask, js map[string]interface{}, level string) {
 	taskInfo := make(map[string]interface{})
 	taskInfo["jobID"] = ft.Alloc.JobID
 	taskInfo["allocationID"] = ft.Alloc.ID
@@ -143,6 +147,5 @@ func enrichStringMessage(ft *FollowedTask, message string) map[string]interface{
 	taskInfo["artifacts"] = ft.Task.Artifacts
 
 	js["task"] = taskInfo
-
-	return js
+	js["level"] = level
 }
