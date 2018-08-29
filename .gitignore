@@ -10,3 +10,4 @@ allocationFollower/vendor/gopkg.in/
 allocationFollower/debug
 vendor/gopkg.in/
 debug
+.vscode/launch.json

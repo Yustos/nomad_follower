@@ -11,7 +11,10 @@ import (
 
 func main() {
 
-	createLogFile()
+	err := createLogFile()
+	if err != nil {
+		panic(err)
+	}
 
 	//setup the out channel and error channel
 	outChan := make(chan string)
@@ -44,7 +47,7 @@ func main() {
 	}
 }
 
-func createLogFile() {
+func createLogFile() error {
 	path := os.Getenv("LOG_FILE")
 	// detect if file exists
 	var _, err = os.Stat(path)
@@ -53,10 +56,11 @@ func createLogFile() {
 	if os.IsNotExist(err) {
 		var file, err = os.Create(path)
 		if err != nil {
-			fmt.Errorf("Error creating log file Error:%v", err)
+			return fmt.Errorf("Error creating log file Error:%v", err)
 		}
 		defer file.Close()
 	}
 
 	fmt.Println("{ \"message\":\"==> done creating log file\"}", path)
+	return nil
 }
