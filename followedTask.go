@@ -14,16 +14,16 @@ type FollowedTask struct {
 	Alloc       *nomadApi.Allocation
 	Client      *nomadApi.Client
 	ErrorChan   chan string
-	OutputChan  chan string
+	OutputChan  chan map[string]interface{}
 	Quit        chan struct{}
 	ServiceTags []string
 	Task        *nomadApi.Task
 }
 
 //NewFollowedTask creats a new followed task
-func NewFollowedTask(alloc *nomadApi.Allocation, client *nomadApi.Client, errorChan chan string, output chan string, quit chan struct{}, task *nomadApi.Task) *FollowedTask {
+func NewFollowedTask(alloc *nomadApi.Allocation, client *nomadApi.Client, errorChan chan string, output chan map[string]interface{}, quit chan struct{}, task *nomadApi.Task) *FollowedTask {
 	serviceTags := collectServiceTags(task.Services)
-	return &FollowedTask{Alloc: alloc, Task: task, Quit: quit, ServiceTags: serviceTags, OutputChan: output}
+	return &FollowedTask{Alloc: alloc, Task: task, Quit: quit, ServiceTags: serviceTags, OutputChan: output, ErrorChan: errorChan}
 }
 
 //Start starts following a task for an allocation
@@ -49,13 +49,9 @@ func (ft *FollowedTask) Start() {
 				}
 			case stdErrMsg, stdErrOk := <-stdErrStream:
 				if stdErrOk {
-					messages, err := processMessage(stdErrMsg, ft)
-					if err != nil {
-						ft.ErrorChan <- fmt.Sprintf("Error building log message json Error:%v", err)
-					} else {
-						for _, message := range messages {
-							ft.OutputChan <- message
-						}
+					messages := processMessage(stdErrMsg, ft)
+					for _, message := range messages {
+						ft.OutputChan <- message
 					}
 				} else {
 					stdErrStream, stdErrErr = fs.Logs(ft.Alloc, true, ft.Task.Name, "stderr", "start", 0, ft.Quit, &nomadApi.QueryOptions{})
@@ -63,13 +59,9 @@ func (ft *FollowedTask) Start() {
 
 			case stdOutMsg, stdOutOk := <-stdOutStream:
 				if stdOutOk {
-					messages, err := processMessage(stdOutMsg, ft)
-					if err != nil {
-						ft.ErrorChan <- fmt.Sprintf("Error building log message json Error:%v", err)
-					} else {
-						for _, message := range messages {
-							ft.OutputChan <- message
-						}
+					messages := processMessage(stdOutMsg, ft)
+					for _, message := range messages {
+						ft.OutputChan <- message
 					}
 				} else {
 					stdOutStream, stdOutErr = fs.Logs(ft.Alloc, true, ft.Task.Name, "stdout", "start", 0, ft.Quit, &nomadApi.QueryOptions{})
@@ -99,30 +91,20 @@ func collectServiceTags(services []*nomadApi.Service) []string {
 	return result
 }
 
-func processMessage(frame *nomadApi.StreamFrame, ft *FollowedTask) ([]string, error) {
+func processMessage(frame *nomadApi.StreamFrame, ft *FollowedTask) []map[string]interface{} {
 	messages := strings.Split(string(frame.Data[:]), "\n")
-	jsons := make([]string, 0)
+	jsons := make([]map[string]interface{}, 0)
 	for _, message := range messages {
 		if message != "" && message != "\n" {
 			if isJSON(message) {
-				json, err := addTagsJSON(ft.Alloc.ID, message, ft.ServiceTags)
-				if err != nil {
-					ft.ErrorChan <- fmt.Sprintf("Error building log message json Error:%v", err)
-				} else {
-					jsons = append(jsons, json)
-				}
+				jsons = append(jsons, enrichJSONMessage(ft, message))
 			} else {
-				s, err := addTagsString(ft.Alloc.ID, message, ft.ServiceTags)
-				if err != nil {
-					ft.ErrorChan <- fmt.Sprintf("Error building log message json Error:%v", err)
-				} else {
-					jsons = append(jsons, s)
-				}
+				jsons = append(jsons, enrichStringMessage(ft, message))
 			}
 		}
 	}
 
-	return jsons, nil
+	return jsons
 }
 
 func isJSON(s string) bool {
@@ -137,32 +119,30 @@ func getJSONMessage(s string) map[string]interface{} {
 	return js
 }
 
-func addTagsJSON(allocid string, message string, serviceTags []string) (string, error) {
+func enrichJSONMessage(ft *FollowedTask, message string) map[string]interface{} {
 	js := getJSONMessage(message)
 
-	js["service_name"] = strings.Join(serviceTags[:], ",")
-	js["allocid"] = allocid
+	js["task"] = ft
 
-	result, err := json.Marshal(js)
-
-	if err != nil {
-		return "", err
-	}
-
-	return string(result[:]), nil
+	return js
 }
 
-func addTagsString(allocid string, message string, serviceTags []string) (string, error) {
+func enrichStringMessage(ft *FollowedTask, message string) map[string]interface{} {
 	js := make(map[string]interface{})
 	js["message"] = message
-	js["service_name"] = strings.Join(serviceTags[:], ",")
-	js["allocid"] = allocid
+	js["gatheringTime"] = time.Now()
 
-	result, err := json.Marshal(js)
+	taskInfo := make(map[string]interface{})
+	taskInfo["jobID"] = ft.Alloc.JobID
+	taskInfo["allocationID"] = ft.Alloc.ID
+	taskInfo["allocationName"] = ft.Alloc.Name
+	taskInfo["nodeID"] = ft.Alloc.NodeID
+	taskInfo["taskGroup"] = ft.Alloc.TaskGroup
+	taskInfo["serviceTags"] = strings.Join(ft.ServiceTags[:], ",")
+	taskInfo["name"] = ft.Task.Name
+	taskInfo["artifacts"] = ft.Task.Artifacts
 
-	if err != nil {
-		return "", err
-	}
+	js["task"] = taskInfo
 
-	return string(result[:]), nil
+	return js
 }

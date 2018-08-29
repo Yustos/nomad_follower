@@ -11,13 +11,13 @@ type FollowedAllocation struct {
 	Alloc      *nomadApi.Allocation
 	Client     *nomadApi.Client
 	ErrorChan  chan string
-	OutputChan chan string
+	OutputChan chan map[string]interface{}
 	Quit       chan struct{}
 	Tasks      []*FollowedTask
 }
 
 //NewFollowedAllocation creates a new followed allocation
-func NewFollowedAllocation(alloc *nomadApi.Allocation, client *nomadApi.Client, errorChan chan string, outChan chan string) *FollowedAllocation {
+func NewFollowedAllocation(alloc *nomadApi.Allocation, client *nomadApi.Client, errorChan chan string, outChan chan map[string]interface{}) *FollowedAllocation {
 	return &FollowedAllocation{Alloc: alloc, Client: client, ErrorChan: errorChan, OutputChan: outChan, Quit: make(chan struct{}), Tasks: make([]*FollowedTask, 0)}
 }
 

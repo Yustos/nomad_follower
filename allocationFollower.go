@@ -14,13 +14,13 @@ type AllocationFollower struct {
 	Client      *nomadApi.Client
 	ErrorChan   chan string
 	NodeID      string
-	OutChan     chan string
+	OutChan     chan map[string]interface{}
 	Quit        chan bool
 	Ticker      *time.Ticker
 }
 
 //NewAllocationFollower Creates a new allocation follower
-func NewAllocationFollower(outChan chan string, errorChan chan string) (a *AllocationFollower, e error) {
+func NewAllocationFollower(outChan chan map[string]interface{}, errorChan chan string) (a *AllocationFollower, e error) {
 
 	config := nomadApi.DefaultConfig()
 	config.WaitTime = 5 * time.Minute
